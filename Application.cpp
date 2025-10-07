@@ -4,6 +4,7 @@
 #include <string>
 #include <fstream>
 #include <ctime>
+#include <vector>
 
 using namespace std;
 //Big questions: how to keep the window in the viewport as you move it
@@ -13,13 +14,15 @@ using namespace std;
 //logger functions
 Logger::Logger() { //private constructor
     //cout << "DEBUG: Logger created." << endl;
+    //initalize member variables
     visible = false;
+    prefix = "*"; //what goes before messages. has to be set here
+    output;
 }
 
-//initalize member variables
+//initalize static member variables
 Logger* Logger::instance = nullptr;
-bool Logger::writeToFile = false;
-ofstream output;
+
 
 //create using singleton
 Logger* Logger::getInstance(){
@@ -34,9 +37,11 @@ Logger* Logger::getInstance(){
 
 void Logger::ShowLogWindow() {
         visible = true; //for future functionality
-        ImGui::SetNextWindowPos(ImVec2(114, 148), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(477, 806), ImGuiCond_Appearing);
-        ImGui::Begin("Log", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_MenuBar);
+        //set the starting size and position, but it can still be adjusted by the player
+        ImGui::SetNextWindowPos(ImVec2(114, 148), ImGuiCond_Once);
+        ImGui::SetNextWindowSize(ImVec2(477, 806), ImGuiCond_Once);
+        //ImGui::Begin("Log", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_MenuBar);
+        ImGui::Begin("Log", nullptr, ImGuiWindowFlags_MenuBar);
         ImVec4* colors = ImGui::GetStyle().Colors;
         colors[ImGuiCol_Text] = ImVec4(0.89f, 0.52f, 0.12f, 1.00f); //orange, in practice just for title
         colors[ImGuiCol_Header] = ImVec4(0.75f, 0.58f, 0.15f, 1.00f); //faded orange for when log to file is selected
@@ -53,13 +58,17 @@ void Logger::ShowLogWindow() {
         //menu bar for write to file option
         ImGui::BeginMenuBar();
         ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(74, 219, 31, 255)); //set text in menu to green
-        if (ImGui::MenuItem("Write to file", NULL, &writeToFile)) {
-            if(writeToFile) { //warning whenever this is checked it overwrites the existing file
-                output.open("GameLog.txt");
+
+        //completely rework this button to be retroactive
+        if (ImGui::MenuItem("Write to file")) { //now no longer modal, writes the entire contents of the log
+            //Open the file
+            output.open("GameLog.txt");
                 if( !output.is_open() ){
                     cout << "Unable to open file to write log" << endl;
+                    this->LogError("Unable to open file to write log.");
                 } else {
-                    cout << "GameLog.txt succesfully created" << endl;
+                    cout << "GameLog.txt succesfully created" << endl; //don't need to tell the player this, just tell
+                    //them when the process is completed
                 }
 
                 //heads each file with date and time
@@ -67,43 +76,79 @@ void Logger::ShowLogWindow() {
                 char* readableTime = ctime(&now);
                 string readableTimeS = readableTime; //convert result to string
                 output << "Game log created at " << readableTimeS << endl;
-            } else { //when it is unchecked, as in it was initally checked
-                output.close(); //hopefully advanced stuff will close the file if I just close the program
-            }
+                cout << "[To File] Game log created at " << readableTimeS << endl;
+
+                //transcribes everything in the log vector
+                //doesn't use prefix, replaces color with its own prefix
+                for(int i = 0; i < this->LogMessages.size(); i++) {
+                    string p; //so that it isn't confused with prefix
+                    if(this->LogMessages[i].level == 0) {
+                        p = "[EVENT] ";
+                    } else if(this->LogMessages[i].level == 1) { //set white for info
+                        p = "[INFO] ";
+                    } else if(this->LogMessages[i].level == 2) { //set red for error message
+                        p = "[ERROR] ";
+                    }
+                    string message = p + this->LogMessages[i].m;
+                    output << message << endl;
+                }
+
+
+                this->LogGameEvent("Log successfully written to build/Debug/GameLog.txt");
         }
+
+        if(ImGui::MenuItem("Print test messages")) {
+            for(int i = 1; i < 6; i++) {
+                this->LogInfo("Test message " + to_string(i));
+            }
+        } 
         ImGui::PopStyleColor();
         ImGui::EndMenuBar();
 
+        //print out all the messages
+        for(int i = 0; i < this->LogMessages.size(); i++) {
+            string sMessage = this->prefix + this->LogMessages[i].m;
+            const char* cMessage = sMessage.c_str();
+            //use different text color depending on level
+            if(this->LogMessages[i].level == 0) { //set orange for event
+                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(227, 133, 31, 255)); //orange
+            } else if(this->LogMessages[i].level == 1) { //set white for info
+                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255)); //white
+            } else if(this->LogMessages[i].level == 2) { //set red for error message
+                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(179, 34, 18, 255)); //red
 
+            }
+            ImGui::TextWrapped(cMessage);
+            ImGui::PopStyleColor(); //revert color change
+        }
+        ImGui::End();
         
         
     }
-//need to test if scrolling is automatic feature of the lib
+
+//methods for writing for log
+//different methods so reworking the level system is easy
 //Log info is for information presented without flavor
 void Logger::LogInfo(string message) {
-    string prefix = "*"; //what messages should be prefixed with, to make it easy to change
-    string fullMessage = prefix + message;
-    const char* cMessage = fullMessage.c_str();
-    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255)); //set color to white
-    ImGui::TextWrapped(cMessage);
-    ImGui::PopStyleColor(); //revert color change
-
-    if(writeToFile) {
-        output << "[INFO] " << fullMessage << endl;
-    }
+    logMessage n;
+    n.level = 1;
+    n.m = message;
+    this->LogMessages.push_back(n);
 }
+//LogGameEvent is for the most essential messages, presented in the AI's "voice"
 void Logger::LogGameEvent(string message) {
-    //Log game event is for the AI "speaking"
-    string prefix = "*"; //what messages should be prefixed with, to make it easy to change
-    string fullMessage = prefix + message;
-    const char* cMessage = fullMessage.c_str();
-    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(227, 133, 31, 255)); //set color to orange
-    ImGui::TextWrapped(cMessage);
-    ImGui::PopStyleColor(); //revert color change
+    logMessage n;
+    n.level = 0;
+    n.m = message;
+    this->LogMessages.push_back(n);
+}
 
-    if(writeToFile) {
-        output << "[EVENT] " << fullMessage << endl;
-    }
+//for non-fatal errors
+void Logger::LogError(string message) {
+    logMessage n;
+    n.level = 2;
+    n.m = message;
+    this->LogMessages.push_back(n);
 }
 
 //Hiding log window functionality disabled
@@ -111,27 +156,13 @@ void Logger::LogGameEvent(string message) {
 //bool Logger::IsLogWindowVisible() {
     //return visible;}
 
-//this function is used to open and set up the GameLog.txt file without using the button normally used to toggle it. When this
-//method is executed, the "Write to File" button shouldn't be touched, because I have no idea what it will do.
-void fileHandler(Logger* logger) {
-    logger->writeToFile = true;
-    logger->output.open("GameLog.txt");
-                if( !(logger->output.is_open()) ){
-                    cout << "Unable to open file to write log" << endl;
-                }
 
-                //heads each file with date and time
-                time_t now = time(0);
-                char* readableTime = ctime(&now);
-                string readableTimeS = readableTime; //convert result to string
-                logger->output << "Game log created at " << readableTimeS << endl;
-}
 
 //changes to the provided code detailed in the README.
 namespace ClassGame {
         //
         // our global variables
-        //
+        Logger* logger = Logger::getInstance();
 
         //
         // game starting point
@@ -140,9 +171,20 @@ namespace ClassGame {
         
         void GameStartUp() 
         {
-            IMGUI_CHECKVERSION();
-            ImGui::CreateContext();
-            ImGuiIO& io = ImGui::GetIO();
+            //already in main
+            //IMGUI_CHECKVERSION();
+            //ImGui::CreateContext();
+            //ImGuiIO& io = ImGui::GetIO();
+            //make this test messages only appear once
+            logger->LogGameEvent("Would you like to play a game?");
+            logger->LogInfo("This is a message.");
+            for(int i = 0; i < 200; i++) {
+                string num = to_string(i);
+                logger->LogInfo("this is message num " + num + ".");
+
+            }
+            
+            
         }
 
         //
@@ -151,23 +193,10 @@ namespace ClassGame {
         //
         void RenderGame() 
         {
-            ImGui::DockSpaceOverViewport(); //still need to figure out how to make docking not a thing
+            ImGui::DockSpaceOverViewport();
             ImGui::ShowDemoWindow();
-            Logger* logger = Logger::getInstance();
-            fileHandler(logger); //for testing writing log to file. If uncommented, do not touch the button that should toggle this functionality
-            logger->ShowLogWindow();
-            logger->LogInfo("This is a message.");
-            //loop a bunch of messages to test scroll feature
-            for(int i = 0; i < 200; i++) {
-                string num = to_string(i);
-                logger->LogInfo("this is message num " + num + ".");
+            logger->ShowLogWindow(); //logger has to be initalized in the RenderGame method so I can refer to it in RenderGame()
 
-            }
-            logger->LogGameEvent("Would you like to play a game?");
-            ImGui::End(); //might have some problems when I want to create multiple windows while still allowing the log to be updated
-            //but that is a future problem, and I'm sure I'll get more instruction on how to make updatable windows
-            logger->output.close(); //as part of the fileHanlder workaround.
-            
         }
  
         //

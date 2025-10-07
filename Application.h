@@ -1,6 +1,7 @@
 #pragma once
 #include <iostream>
 #include <fstream>
+#include <vector>
 using namespace std;
 
 namespace ClassGame {
@@ -12,6 +13,14 @@ namespace ClassGame {
     
 }
 
+struct logMessage {
+    string m;
+    int level;
+    //level = 0 -> Event
+    //level = 1 -> Info
+    //level = 2 -> Error
+
+};
 
 class Logger {
     private: //singleton stuff
@@ -26,8 +35,10 @@ class Logger {
         
         
     public:
-        static bool writeToFile; //public for fileHandler fuction
         ofstream output;
+        //for log messages
+        vector<logMessage> LogMessages;
+        string prefix;
        //singleton "construct"
         static Logger* getInstance();
         
@@ -36,7 +47,8 @@ class Logger {
         //void ToggleLogWindow();
         //bool IsLogWindowVisible();
         
-        //from application.cpp
+        //types of messages
         void LogInfo(string message); //standard info message
         void LogGameEvent(string message); //flavor message
+        void LogError(string message); //non-fatal error
 };
